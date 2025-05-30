@@ -1,5 +1,8 @@
 import sys
-from PyQt5.QtWidgets import QApplication, QWidget, QLabel, QLineEdit, QPushButton, QVBoxLayout, QComboBox, QMessageBox
+from PyQt5.QtWidgets import (
+    QApplication, QWidget, QLabel, QLineEdit, QPushButton,
+    QVBoxLayout, QComboBox, QMessageBox, QFileDialog
+)
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, PatternFill
 from openpyxl.utils import get_column_letter
@@ -13,9 +16,16 @@ class ExcelGenerator(QWidget):
         self.setWindowTitle('Excel Tablo Oluşturucu')
         self.setGeometry(100, 100, 600, 400)
         
+        self.label_yil = QLabel('Yıl Seçin:')
+        self.combo_yil = QComboBox()
+        self.combo_yil.addItems([str(yil) for yil in range(2020, 2031)])
+        
         self.label_ay = QLabel('Ay Seçin:')
         self.combo_ay = QComboBox()
-        self.combo_ay.addItems(['Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran', 'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'])
+        self.combo_ay.addItems([
+            'Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran',
+            'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'
+        ])
         
         self.label_gun_basi_km = QLabel('Gün Başı Kilometre:')
         self.input_gun_basi_km = QLineEdit()
@@ -34,6 +44,8 @@ class ExcelGenerator(QWidget):
         self.button_kaydet.clicked.connect(self.kaydet_ve_listele)
         
         self.layout = QVBoxLayout()
+        self.layout.addWidget(self.label_yil)
+        self.layout.addWidget(self.combo_yil)
         self.layout.addWidget(self.label_ay)
         self.layout.addWidget(self.combo_ay)
         self.layout.addWidget(self.label_gun_basi_km)
@@ -51,12 +63,27 @@ class ExcelGenerator(QWidget):
     def kaydet_ve_listele(self):
         ay_index = self.combo_ay.currentIndex()
         ay = self.combo_ay.itemText(ay_index)
-        gun_basi_km = float(self.input_gun_basi_km.text())
-        km_aralik_str = self.input_km_aralik.text()
-        km_min, km_max = map(int, km_aralik_str.split('-'))
+        yil = int(self.combo_yil.currentText())
+
+        try:
+            gun_basi_km = float(self.input_gun_basi_km.text())
+        except ValueError:
+            QMessageBox.warning(self, "Hata", "Lütfen geçerli bir gün başı kilometre değeri girin.")
+            return
+
+        km_aralik_str = self.input_km_aralik.text().strip()
+        try:
+            parts = list(map(str.strip, km_aralik_str.split('-')))
+            if len(parts) != 2:
+                raise ValueError
+            km_min, km_max = map(int, parts)
+        except ValueError:
+            QMessageBox.warning(self, "Hata", "Lütfen kilometre aralığını 'min-max' formatında girin (örn: 100-300).")
+            return
+
         gorev_yeri = self.input_gorev_yeri.text()
         haftasonu_durumu = self.combo_haftasonu.currentText()
-        
+
         workbook = Workbook()
         sheet = workbook.active
         
@@ -67,8 +94,8 @@ class ExcelGenerator(QWidget):
         sheet['E1'] = 'Kontrol / İmza'
         sheet['F1'] = 'Göreve Gidilen Yer'
         
-        first_day = datetime(2024, ay_index + 1, 1)
-        last_day = datetime(2024, ay_index + 1, monthrange(2024, ay_index + 1)[1])
+        first_day = datetime(yil, ay_index + 1, 1)
+        last_day = datetime(yil, ay_index + 1, monthrange(yil, ay_index + 1)[1])
         current_day = first_day
         total_km = 0
         
@@ -77,11 +104,12 @@ class ExcelGenerator(QWidget):
         while current_day <= last_day:
             gun_basi_tarih = current_day.strftime('%d/%m/%Y')
             
-            # Hafta sonu kontrolü
             if current_day.weekday() >= 5:  # Cumartesi veya Pazar
                 if haftasonu_durumu == 'Çalışmıyor':
-                    sheet.append([gun_basi_tarih, '', '', '', '', '', ''])
-                    sheet.row_dimensions[sheet.max_row].fill = haftasonu_fill
+                    sheet.append([gun_basi_tarih, '', '', '', '', ''])
+                    for col in range(1, 7):
+                        sheet.cell(row=sheet.max_row, column=col).fill = haftasonu_fill
+
                 else:
                     yapilan_km = random.randint(km_min, km_max)
                     gun_sonu_km = gun_basi_km + yapilan_km
@@ -106,26 +134,31 @@ class ExcelGenerator(QWidget):
             for cell in sheet[get_column_letter(col)]:
                 cell.alignment = Alignment(horizontal='center', vertical='center')
 
-        # Hafta sonu satırlarını arka plan rengiyle belirtme
         for row in range(2, sheet.max_row + 1):
             if sheet.cell(row=row, column=1).value:
-                gun_basi_tarih = datetime.strptime(sheet.cell(row=row, column=1).value, '%d/%m/%Y')
-                if gun_basi_tarih.weekday() >= 5:  # Cumartesi veya Pazar
-                    for col in range(1, 7):  # A-F (1-6) aralığını boyama
-                        sheet.cell(row=row, column=col).fill = haftasonu_fill
+                try:
+                    gun_basi_tarih = datetime.strptime(sheet.cell(row=row, column=1).value, '%d/%m/%Y')
+                    if gun_basi_tarih.weekday() >= 5:
+                        for col in range(1, 7):
+                            sheet.cell(row=row, column=col).fill = haftasonu_fill
+                except ValueError:
+                    continue
 
+        # Kaydetme yeri ve adı seç
+        file_path, _ = QFileDialog.getSaveFileName(
+            self, "Excel Dosyasını Kaydet", f"Servis_Raporu_{ay}_{yil}.xlsx", "Excel Files (*.xlsx)"
+        )
+        if not file_path:
+            return
 
-
-
-
-        workbook.save('Servis_Raporu.xlsx')
+        workbook.save(file_path)
         self.input_gun_basi_km.clear()
         self.input_km_aralik.clear()
         self.input_gorev_yeri.clear()
 
         QMessageBox.information(self, 'Bilgi', 'Excel dosyası başarıyla oluşturuldu!', QMessageBox.Ok)
 
-# Kodun devamı
+# Uygulama çalıştırma kısmı
 if __name__ == '__main__':
     app = QApplication(sys.argv)
     window = ExcelGenerator()
