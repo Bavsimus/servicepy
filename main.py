@@ -4,16 +4,16 @@ from PyQt5.QtWidgets import (
     QComboBox, QMessageBox, QFileDialog, QSpinBox, QFormLayout, QGroupBox
 )
 from openpyxl import Workbook
-from openpyxl.styles import Alignment, PatternFill
+from openpyxl.styles import Alignment, PatternFill, Border, Side
 from openpyxl.utils import get_column_letter
 from calendar import monthrange
-from datetime import datetime, timedelta
+from datetime import datetime
 import random
 
 class ExcelGenerator(QWidget):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle('Çoklu Araç için Excel Tablosu (Tek Sayfa)')
+        self.setWindowTitle('Excel Tablo Oluşturucu (Kenarlıklı)')
         self.setGeometry(100, 100, 800, 600)
         self.layout = QVBoxLayout()
 
@@ -88,9 +88,15 @@ class ExcelGenerator(QWidget):
         wb = Workbook()
         ws = wb.active
         ws.title = "Tüm Araçlar"
+        row_cursor = 1
 
-        row_cursor = 1  # Başlangıç satırı
         fill = PatternFill(start_color='FFC0C0', end_color='FFC0C0', fill_type='solid')
+        border = Border(
+            left=Side(style='thin'),
+            right=Side(style='thin'),
+            top=Side(style='thin'),
+            bottom=Side(style='thin')
+        )
 
         for index, arac in enumerate(self.arac_inputlar):
             try:
@@ -99,61 +105,71 @@ class ExcelGenerator(QWidget):
                 gorev_yeri = arac["gorev_yeri"].text().strip()
                 haftasonu_durumu = arac["haftasonu"].currentText()
             except Exception:
-                QMessageBox.warning(self, "Hata", f"Araç {index+1} için veriler eksik ya da hatalı.")
+                QMessageBox.warning(self, "Hata", f"Araç {index+1} için girişler eksik veya hatalı.")
                 return
 
-            ws.cell(row=row_cursor, column=1).value = f"Araç {index + 1}"
-            row_cursor += 1
+            # Başlık Satırı
+            ws.cell(row=row_cursor, column=1).value = "TARİH"
+            ws.merge_cells(start_row=row_cursor, start_column=2, end_row=row_cursor, end_column=3)
+            ws.cell(row=row_cursor, column=2).value = "GÜN BAŞI (km)"
+            ws.cell(row=row_cursor, column=4).value = "GÜN SONU (km)"
+            ws.cell(row=row_cursor, column=5).value = "YAPTIĞI KİLOMETRE"
+            ws.cell(row=row_cursor, column=6).value = "KONTROL / İMZA"
+            ws.merge_cells(start_row=row_cursor, start_column=7, end_row=row_cursor, end_column=9)
+            ws.cell(row=row_cursor, column=7).value = "GÖREVE GİDİLEN YER"
 
-            headers = ['Tarih', 'Gün Başı (km)', 'Gün Sonu (km)', 'Yapılan KM', 'İmza', 'Görev Yeri']
-            for col, header in enumerate(headers, 1):
-                ws.cell(row=row_cursor, column=col, value=header)
-                ws.cell(row=row_cursor, column=col).alignment = Alignment(horizontal='center', vertical='center')
-            row_cursor += 1
+            for col in range(1, 10):
+                cell = ws.cell(row=row_cursor, column=col)
+                if cell.value not in (None, ""):
+                    cell.border = border
+                    cell.alignment = Alignment(horizontal='center')
 
+            row_cursor += 1
             current_km = km_baslangic
-            total_km = 0
 
             for day in range(1, gun_sayisi + 1):
                 tarih = datetime(yil, ay_index + 1, day)
-                str_tarih = tarih.strftime('%d/%m/%Y')
+                tarih_str = tarih.strftime('%d.%m.%Y')
 
-                if tarih.weekday() >= 5:
-                    if haftasonu_durumu == 'Çalışmıyor':
-                        # Boş ve boyalı satır
-                        for col in range(1, 7):
-                            ws.cell(row=row_cursor, column=col).fill = fill
-                        ws.cell(row=row_cursor, column=1, value=str_tarih)
-                        row_cursor += 1
-                        continue
-                    else:
-                        # Dolu ama yine de boyalı satır
-                        yapilan_km = random.randint(km_min, km_max)
-                        gun_sonu_km = current_km + yapilan_km
-                        total_km += yapilan_km
+                ws.cell(row=row_cursor, column=1).value = tarih_str
+                ws.merge_cells(start_row=row_cursor, start_column=2, end_row=row_cursor, end_column=3)
+                ws.merge_cells(start_row=row_cursor, start_column=7, end_row=row_cursor, end_column=9)
 
-                        ws.append([str_tarih, current_km, gun_sonu_km, yapilan_km, '', gorev_yeri])
-                        for col in range(1, 7):
-                            ws.cell(row=row_cursor, column=col).fill = fill
-                        row_cursor += 1
-                        current_km = gun_sonu_km
-                        continue
+                if tarih.weekday() >= 5 and haftasonu_durumu == 'Çalışmıyor':
+                    for col in range(1, 10):
+                        ws.cell(row=row_cursor, column=col).fill = fill
+                        ws.cell(row=row_cursor, column=col).border = border
+                    row_cursor += 1
+                    continue
+
                 yapilan_km = random.randint(km_min, km_max)
                 gun_sonu_km = current_km + yapilan_km
-                total_km += yapilan_km
 
-                ws.append([str_tarih, current_km, gun_sonu_km, yapilan_km, '', gorev_yeri])
-                row_cursor += 1
+                ws.cell(row=row_cursor, column=2).value = current_km
+                ws.cell(row=row_cursor, column=4).value = gun_sonu_km
+                ws.cell(row=row_cursor, column=5).value = yapilan_km
+                ws.cell(row=row_cursor, column=6).value = ""
+                ws.cell(row=row_cursor, column=7).value = gorev_yeri
+
+                for col in range(1, 10):
+                    cell = ws.cell(row=row_cursor, column=col)
+                    if cell.value not in (None, ""):
+                        cell.border = border
+
+                if tarih.weekday() >= 5:
+                    for col in range(1, 10):
+                        ws.cell(row=row_cursor, column=col).fill = fill
+
                 current_km = gun_sonu_km
+                row_cursor += 1
 
-            ws.append(['', '', 'TOPLAM KM:', total_km])
-            row_cursor += 3  # 2 satır boşluk + başlık için 1
+            row_cursor += 2
 
-        for col in range(1, ws.max_column + 1):
+        for col in range(1, 10):
             ws.column_dimensions[get_column_letter(col)].width = 20
 
         file_path, _ = QFileDialog.getSaveFileName(
-            self, "Excel Dosyasını Kaydet", f"Tum_Araclar_{yil}_{ay_index + 1}.xlsx", "Excel Files (*.xlsx)"
+            self, "Excel Dosyasını Kaydet", f"Arac_Raporu_{yil}_{ay_index + 1}.xlsx", "Excel Files (*.xlsx)"
         )
         if not file_path:
             return
