@@ -1,7 +1,9 @@
 import sys
+import os
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QLabel, QLineEdit, QPushButton, QVBoxLayout,
-    QComboBox, QMessageBox, QFileDialog, QSpinBox, QFormLayout, QGroupBox
+    QComboBox, QMessageBox, QFileDialog, QSpinBox, QFormLayout, QGroupBox,
+    QHBoxLayout, QInputDialog
 )
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, PatternFill, Border, Side
@@ -10,10 +12,25 @@ from calendar import monthrange
 from datetime import datetime
 import random
 
+GUZERGAH_DOSYASI = "guzergahlar.txt"
+
+def guzergah_listesini_yukle():
+    if not os.path.exists(GUZERGAH_DOSYASI):
+        return []
+    with open(GUZERGAH_DOSYASI, 'r', encoding='utf-8') as f:
+        return [satir.strip() for satir in f.readlines() if satir.strip()]
+
+def guzergah_ekle(guzergah):
+    guzergahlar = guzergah_listesini_yukle()
+    if guzergah not in guzergahlar:
+        guzergahlar.append(guzergah)
+        with open(GUZERGAH_DOSYASI, 'w', encoding='utf-8') as f:
+            f.write("\n".join(guzergahlar))
+
 class ExcelGenerator(QWidget):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle('Excel Tablo Oluşturucu (Kenarlıklı)')
+        self.setWindowTitle('Excel Tablo Oluşturucu (Güzergah Destekli)')
         self.setGeometry(100, 100, 800, 600)
         self.layout = QVBoxLayout()
 
@@ -30,12 +47,18 @@ class ExcelGenerator(QWidget):
         self.spin_arac_sayisi.setRange(1, 10)
         self.spin_arac_sayisi.valueChanged.connect(self.arac_formlarini_guncelle)
 
+        guzergah_btn_layout = QHBoxLayout()
+        guzergah_ekle_btn = QPushButton("+ Güzergah Ekle")
+        guzergah_ekle_btn.clicked.connect(self.guzergah_ekle)
+        guzergah_btn_layout.addWidget(guzergah_ekle_btn)
+
         self.layout.addWidget(QLabel("Yıl Seçin:"))
         self.layout.addWidget(self.combo_yil)
         self.layout.addWidget(QLabel("Ay Seçin:"))
         self.layout.addWidget(self.combo_ay)
         self.layout.addWidget(QLabel("Araç Sayısı:"))
         self.layout.addWidget(self.spin_arac_sayisi)
+        self.layout.addLayout(guzergah_btn_layout)
 
         self.arac_formlari_container = QVBoxLayout()
         self.arac_formlari_group = QGroupBox("Araç Bilgileri")
@@ -50,7 +73,14 @@ class ExcelGenerator(QWidget):
         self.arac_inputlar = []
         self.arac_formlarini_guncelle()
 
+    def guzergah_ekle(self):
+        text, ok = QInputDialog.getText(self, 'Güzergah Ekle', 'Yeni güzergah girin:')
+        if ok and text.strip():
+            guzergah_ekle(text.strip())
+            self.arac_formlarini_guncelle()
+
     def arac_formlarini_guncelle(self):
+        guzergahlar = guzergah_listesini_yukle()
         for i in reversed(range(self.arac_formlari_container.count())):
             self.arac_formlari_container.itemAt(i).widget().setParent(None)
         self.arac_inputlar.clear()
@@ -61,7 +91,8 @@ class ExcelGenerator(QWidget):
 
             input_baslangic_km = QLineEdit()
             input_km_aralik = QLineEdit()
-            input_gorev_yeri = QLineEdit()
+            input_gorev_yeri = QComboBox()
+            input_gorev_yeri.addItems(guzergahlar)
             input_haftasonu = QComboBox()
             input_haftasonu.addItems(['Çalışıyor', 'Çalışmıyor'])
 
@@ -92,23 +123,21 @@ class ExcelGenerator(QWidget):
 
         fill = PatternFill(start_color='FFC0C0', end_color='FFC0C0', fill_type='solid')
         border = Border(
-            left=Side(style='thin'),
-            right=Side(style='thin'),
-            top=Side(style='thin'),
-            bottom=Side(style='thin')
+            left=Side(style='thin'), right=Side(style='thin'),
+            top=Side(style='thin'), bottom=Side(style='thin')
         )
 
         for index, arac in enumerate(self.arac_inputlar):
             try:
                 km_baslangic = float(arac["baslangic_km"].text())
                 km_min, km_max = map(int, arac["km_aralik"].text().split('-'))
-                gorev_yeri = arac["gorev_yeri"].text().strip()
+                gorev_yeri = arac["gorev_yeri"].currentText()
                 haftasonu_durumu = arac["haftasonu"].currentText()
             except Exception:
                 QMessageBox.warning(self, "Hata", f"Araç {index+1} için girişler eksik veya hatalı.")
                 return
 
-            # Başlık Satırı
+            # Başlık
             ws.cell(row=row_cursor, column=1).value = "TARİH"
             ws.merge_cells(start_row=row_cursor, start_column=2, end_row=row_cursor, end_column=3)
             ws.cell(row=row_cursor, column=2).value = "GÜN BAŞI (km)"
@@ -177,7 +206,6 @@ class ExcelGenerator(QWidget):
         wb.save(file_path)
         QMessageBox.information(self, "Başarılı", "Excel dosyası başarıyla kaydedildi!")
 
-# Ana uygulama
 if __name__ == '__main__':
     app = QApplication(sys.argv)
     window = ExcelGenerator()
